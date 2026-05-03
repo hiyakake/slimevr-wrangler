@@ -220,12 +220,12 @@ impl MainState {
             .spacing(20)
             .push(address(&self.settings.load().address))
             .push(checkbox(
-                "Send yaw reset command to SlimeVR Server after B or UP button press.",
+                "Enable B/UP button action (reserved for future VMT control messages).",
                 self.settings.load().send_reset).on_toggle(
                 Message::SettingsResetToggled)
             )
             .push(checkbox(
-                "Save mounting location on server. Requires SlimeVR Server v0.6.1 or newer. Restart Wrangler after changing this.",
+                "Keep stable tracker IDs between launches. Restart Wrangler after changing this.",
                 self.settings.load().keep_ids).on_toggle(
                 Message::SettingsIdsToggled,
             ))
@@ -233,7 +233,7 @@ impl MainState {
 }
 
 fn address<'a>(input_value: &str) -> Column<'a, Message> {
-    let address = text_input("127.0.0.1:6969", input_value)
+    let address = text_input("127.0.0.1:39570", input_value)
         .on_input(Message::AddressChange)
         .width(Length::Fixed(300.0))
         .padding(10);
@@ -241,7 +241,7 @@ fn address<'a>(input_value: &str) -> Column<'a, Message> {
     let address_row = Row::new()
         .spacing(10)
         .align_y(Alignment::Center)
-        .push("SlimeVR Server address:")
+        .push("VMT OSC address:")
         .push(address)
         .push("Restart Wrangler after changing this.");
     let mut allc = Column::new().push(address_row).spacing(10);
@@ -249,7 +249,7 @@ fn address<'a>(input_value: &str) -> Column<'a, Message> {
     if input_value.parse::<SocketAddr>().is_err() {
         allc = allc.push(
             container(text(
-                "Address is not a valid ip with port number! Using default instead (127.0.0.1:6969).",
+                "Address is not a valid ip with port number! Using default instead (127.0.0.1:39570).",
             ))
             .style(style::text_yellow),
         );

@@ -57,7 +57,7 @@ fn return_mac() -> [u8; 6] {
     [0x00, 0x0F, r.random(), r.random(), r.random(), r.random()]
 }
 
-const DEFAULT_ADDR: &str = "127.0.0.1:6969";
+const DEFAULT_ADDR: &str = "127.0.0.1:39570";
 
 impl WranglerSettings {
     pub fn save(&self) {

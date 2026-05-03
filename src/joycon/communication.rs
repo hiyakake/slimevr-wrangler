@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::Display,
-    net::{SocketAddr, UdpSocket},
+    net::UdpSocket,
     sync::mpsc,
     time::{Duration, Instant},
 };
@@ -10,6 +10,7 @@ use itertools::Itertools;
 use nalgebra::{UnitQuaternion, Vector3};
 use protocol::deku::{DekuContainerRead, DekuContainerWrite};
 use protocol::PacketType;
+use rosc::{encoder, OscMessage, OscPacket, OscType};
 
 use super::{
     imu::{Imu, JoyconAxisData},
@@ -57,25 +58,13 @@ impl Display for DeviceStatus {
 struct Device {
     imu: Imu,
     design: JoyconDesign,
-    send_id: u8,
+    send_id: i32,
     battery: Battery,
     status: DeviceStatus,
     imu_times: Vec<Instant>,
 }
 
-impl Device {
-    pub fn handshake(&self, socket: &UdpSocket, address: &SocketAddr) {
-        let sensor_info = PacketType::SensorInfo {
-            packet_id: 0,
-            sensor_id: self.send_id,
-            sensor_status: 1,
-            sensor_type: 0,
-        };
-        socket
-            .send_to(&sensor_info.to_bytes().unwrap(), address)
-            .unwrap();
-    }
-}
+impl Device {}
 
 #[derive(Debug, Clone)]
 pub struct ChannelData {
@@ -151,10 +140,8 @@ pub struct Communication {
 
     use_keep_ids: bool,
     socket: UdpSocket,
-    address: SocketAddr,
+    address: String,
     connected: ServerStatus,
-    last_handshake: Instant,
-    last_ping: Instant,
     last_reset: Instant,
 }
 impl Communication {
@@ -173,7 +160,7 @@ impl Communication {
         let address = { settings.load().get_socket_address() };
         let use_keep_ids = { settings.load().keep_ids };
 
-        server_tx.send(ServerStatus::Disconnected).ok();
+        server_tx.send(ServerStatus::Connected).ok();
 
         Self {
             receive,
@@ -183,39 +170,34 @@ impl Communication {
             devices: HashMap::new(),
             use_keep_ids,
             socket,
-            address,
+            address: address.to_string(),
             connected: ServerStatus::Disconnected,
-            last_handshake: Instant::now().checked_sub(Duration::from_secs(60)).unwrap(),
-            last_ping: Instant::now(),
+
             last_reset: Instant::now(),
         }
         .main_loop();
     }
 
-    fn send_handshake(&self) {
-        let handshake = PacketType::Handshake {
-            packet_id: 0,
-            board: 0,
-            imu: 0,
-            mcu_type: 0,
-            imu_info: (0, 0, 0),
-            build: 9,
-            firmware: "slimevr-wrangler".to_string().into(),
-            mac_address: self.settings.load().emulated_mac,
+    fn send_vmt_pose(&self, sensor_id: i32, quat: (f32, f32, f32, f32)) {
+        let msg = OscMessage {
+            addr: "/VMT/Room/Unity".to_owned(),
+            args: vec![
+                OscType::Int(sensor_id),
+                OscType::Int(1),
+                OscType::Float(0.0),
+                OscType::Float(0.0),
+                OscType::Float(0.0),
+                OscType::Float(0.0),
+                OscType::Float(quat.0),
+                OscType::Float(quat.1),
+                OscType::Float(quat.2),
+                OscType::Float(quat.3),
+            ],
         };
-        self.socket
-            .send_to(&handshake.to_bytes().unwrap(), self.address)
-            .unwrap();
-    }
-
-    fn send_reset(&self) {
-        let handshake = PacketType::UserAction {
-            packet_id: 0,
-            typ: 3,
-        };
-        self.socket
-            .send_to(&handshake.to_bytes().unwrap(), self.address)
-            .unwrap();
+        let packet = OscPacket::Message(msg);
+        if let Ok(data) = encoder::encode(&packet) {
+            self.socket.send_to(&data, &self.address).ok();
+        }
     }
 
     fn parse_message(&mut self, msg: ChannelData) {
@@ -230,9 +212,9 @@ impl Communication {
                 }
 
                 let send_id = if self.use_keep_ids {
-                    self.settings.joycon_keep_id(sn.clone())
+                    self.settings.joycon_keep_id(sn.clone()) as i32
                 } else {
-                    self.devices.len() as _
+                    self.devices.len() as i32
                 };
                 let device = Device {
                     imu: Imu::new(),
@@ -242,8 +224,6 @@ impl Communication {
                     status: DeviceStatus::NoIMU,
                     imu_times: vec![],
                 };
-
-                device.handshake(&self.socket, &self.address);
                 self.devices.insert(sn, device);
             }
             ChannelInfo::ImuData(imu_data) => {
@@ -262,26 +242,11 @@ impl Communication {
                         device.imu.rotation
                     };
 
-                    let rotation_packet = PacketType::RotationData {
-                        packet_id: 0,
-                        sensor_id: device.send_id,
-                        data_type: 1,
-                        quat: (*rotated_quat).into(),
-                        calibration_info: 0,
-                    };
-                    self.socket
-                        .send_to(&rotation_packet.to_bytes().unwrap(), self.address)
-                        .unwrap();
-
-                    let acc = calc_acceleration(device.imu.rotation, &imu_data[2], rad_rotation);
-                    let acceleration_packet = PacketType::Acceleration {
-                        packet_id: 0,
-                        vector: (acc.x as f32, acc.y as f32, acc.z as f32),
-                        sensor_id: Some(device.send_id),
-                    };
-                    self.socket
-                        .send_to(&acceleration_packet.to_bytes().unwrap(), self.address)
-                        .unwrap();
+                    let q = rotated_quat.quaternion();
+                    self.send_vmt_pose(
+                        device.send_id,
+                        (q.i as f32, q.j as f32, q.k as f32, q.w as f32),
+                    );
                 }
             }
             ChannelInfo::Battery(battery) => {
@@ -292,7 +257,6 @@ impl Communication {
             ChannelInfo::Reset => {
                 if self.settings.load().send_reset && self.last_reset.elapsed().as_secs() >= 2 {
                     self.last_reset = Instant::now();
-                    self.send_reset();
                 }
             }
             ChannelInfo::Disconnected => {
@@ -325,8 +289,6 @@ impl Communication {
     }
 
     pub fn main_loop(&mut self) {
-        let mut buf = [0; 512];
-
         // Spin sleeper with 1ns accuracy. The accuracy is backwards, it means that a request for
         // X sleep will actually sleep for X - 1ns then spin for 1ns max.
         // It is used here because it also sets the minimum Windows sleep time to 1ms instead of 15ms.
@@ -336,37 +298,8 @@ impl Communication {
         let mut last_ui_send = Instant::now();
 
         loop {
-            if self.connected != ServerStatus::Connected
-                && self.last_handshake.elapsed().as_secs() >= 3
-            {
-                self.last_handshake = Instant::now();
-                self.send_handshake();
-                for device in self.devices.values().sorted_by_key(|d| d.send_id) {
-                    device.handshake(&self.socket, &self.address);
-                }
-            }
-            while let Ok(len) = self.socket.recv(&mut buf) {
-                if self.connected == ServerStatus::Disconnected {
-                    self.connected = ServerStatus::Unknown;
-                    self.server_tx.send(self.connected).ok();
-                }
-                let b = PacketType::from_bytes((&buf, 0));
-                match b {
-                    Ok((_, PacketType::Ping { id: _ })) => {
-                        self.last_ping = Instant::now();
-                        self.socket.send_to(&buf[0..len], self.address).unwrap();
-                    }
-                    Ok((_, PacketType::HandshakeResponse)) => {
-                        self.connected = ServerStatus::Connected;
-                        self.server_tx.send(self.connected).ok();
-                    }
-                    _ => {}
-                }
-            }
-            if self.connected != ServerStatus::Disconnected
-                && self.last_ping.elapsed().as_secs() >= 3
-            {
-                self.connected = ServerStatus::Disconnected;
+            if self.connected != ServerStatus::Connected {
+                self.connected = ServerStatus::Connected;
                 self.server_tx.send(self.connected).ok();
             }
 
