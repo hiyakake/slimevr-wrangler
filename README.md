@@ -1,27 +1,63 @@
 <div align="center">
 
-# SlimeVR Wrangler
+# SlimeVR Wrangler (VMT Output)
 
 [![Discord Server](https://img.shields.io/discord/817184208525983775?color=7389D8&label=Discord%20&logo=discord&logoColor=FFFFFF)](https://discord.gg/slimevr)
 </div>
 
-Use Joy-Con's as SlimeVR trackers, enabling you to make a full body system with your existing devices. Combine with DIY SlimeVR trackers, or phones using owoTrack.
+Use Joy-Cons as rotation trackers and stream their pose data to **VMT (Virtual Motion Tracker)** via OSC.
+This lets you use Joy-Cons as SteamVR virtual trackers through VMT.
 
 ![Screenshot of the app running and tracking a single Joy-Con](screenshot.png)
 
-## Setup
-You need bluetooth on your computer.
-* Download and set up [SlimeVR](https://docs.slimevr.dev/server-setup/initial-setup.html)
-* Download [SlimeVR Wrangler](https://github.com/carl-anders/slimevr-wrangler/releases/latest/download/slimevr-wrangler.exe)
-* Start both the SlimeVR server and SlimeVR Wrangler 
-* Connect your Joy-Con trackers to the computer ([Guide for Windows](https://www.digitaltrends.com/gaming/how-to-connect-a-nintendo-switch-controller-to-a-pc/))
-* Make sure the SlimeVR server is running, then press "Search for Joycons" inside SlimeVR Wrangler
-* The Joy-Con should show up in the window!
-* Follow the SlimeVR documentation to set up the new tracker, with the direction below:
+## Runtime Setup (VMT)
+You need Bluetooth on your computer.
+
+1. Install and start **VMT (Virtual Motion Tracker)**.
+2. Start SteamVR.
+3. Connect Joy-Cons to your computer ([Windows pairing guide](https://www.digitaltrends.com/gaming/how-to-connect-a-nintendo-switch-controller-to-a-pc/)).
+4. Start `slimevr-wrangler`.
+5. Open **Settings** and confirm `VMT OSC address` (default: `127.0.0.1:39570`).
+6. Return to the main view and wait for Joy-Cons to appear.
+
+### Tracker behavior
+- Position is fixed to `(0, 0, 0)`.
+- Rotation (quaternion) is streamed from Joy-Con IMU data.
+- This is intended to be a **rotation-only tracker** pipeline.
+
+## Build from source
+
+### Prerequisites
+- Rust toolchain (stable): https://rustup.rs
+- Platform dependencies for `hidapi`:
+  - **Ubuntu/Debian**: `sudo apt install libudev-dev pkg-config`
+  - **Fedora**: `sudo dnf install systemd-devel pkgconf-pkg-config`
+  - **Arch**: `sudo pacman -S systemd pkgconf`
+
+### Debug build
+```bash
+cargo build
+```
+Binary path:
+- Linux/macOS: `target/debug/slimevr-wrangler`
+- Windows: `target\\debug\\slimevr-wrangler.exe`
+
+### Release build
+```bash
+cargo build --release
+```
+Binary path:
+- Linux/macOS: `target/release/slimevr-wrangler`
+- Windows: `target\\release\\slimevr-wrangler.exe`
+
+### Run directly
+```bash
+cargo run --release
+```
 
 ### Mounting
 
-Attach the Joy-Con's in the direction that works best for you, use the SlimeVR guide to see the positions on your body.
+Attach the Joy-Cons in the direction that works best for your body placement.
 
 Keep the joystick pointed outwards, it should not poke into your skin.
 
@@ -31,7 +67,7 @@ After connecting the Joy-Con's in the program, rotate them in the program to be 
 
 Many! This is a **alpha** version, and there's no guarantees about anything.
 
-* Rotation tracking is bad! - Yup, sorry. In the future there will be settings to help fine tune the tracking. I suggest binding a button to reset.
+* Rotation tracking is bad! - Yup, sorry. In the future there will be settings to help fine tune tracking.
 * It stops tracking when I turn around! - Bluetooth does not have a good range, you might have better luck with a different bluetooth adapter.
 * Probably more.
 
