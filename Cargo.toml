@@ -34,6 +34,7 @@ regex = "1.11"
 thiserror = "2.0"
 spin_sleep = "1.3"
 rand = "0.9"
+rosc = "0.10"
 
 [target.'cfg(target_os="windows")'.dependencies]
 winreg = "0.11"
