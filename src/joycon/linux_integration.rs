@@ -141,7 +141,9 @@ async fn check_batteries(tx: mpsc::Sender<ChannelData>, macs: &HashSet<String>) 
         let device = DeviceProxy::new(&connection, upower_dev.clone())
             .await
             .unwrap();
-        let Ok(serial) = device.serial().await else { continue; };
+        let Ok(serial) = device.serial().await else {
+            continue;
+        };
 
         if macs.contains(&serial) {
             let level = convert_battery(device.battery_level().await.unwrap());
